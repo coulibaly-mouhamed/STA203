@@ -1,10 +1,16 @@
 ---
 title: "Projet STA203"
+author: "Tajja Ayoub et COULIBALY Mouhamed"
 output: html_notebook
 ---
+## Introduction 
+L'objectif de ce projet est d'arriver à s'affranchir des analyses chimiques côuteuses pour pouvoir déterminer la teneur en en sucre. Pour cela, nous construirons un modèle d'apprentissage statistique en nous basant sur un dataset contenant des mesures de spectrométrie infrarouge contenu dans le jeu de données \textit{cookies}.
 
+## Etude théorique 
+bdzvy
 
-
+## Analyse Exploratoire 
+Pour nous familiariser avec le jeu de donnée on va faire une analyse exploratoire 
 ```{r}
 ```
 
