@@ -1,7 +1,11 @@
 ---
-title: "Projet STA203"
-author: "Tajja Ayoub et COULIBALY Mouhamed"
-output: html_notebook
+itle: "Projet STA203"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+authors: COULIBALY Mouhamed, TAJJA Ayoub
 ---
 ## Introduction 
 L'objectif de ce projet est d'arriver à s'affranchir des analyses chimiques côuteuses pour pouvoir déterminer la teneur en en sucre. Pour cela, nous construirons un modèle d'apprentissage statistique en nous basant sur un dataset contenant des mesures de spectrométrie infrarouge contenu dans le jeu de données \textit{cookies}.
@@ -10,8 +14,174 @@ L'objectif de ce projet est d'arriver à s'affranchir des analyses chimiques cô
 bdzvy
 
 ## Analyse Exploratoire 
-Pour nous familiariser avec le jeu de donnée on va faire une analyse exploratoire 
-```{r}
+Pour nous familiariser avec le jeu de donnée on va faire une analyse exploratoire du dataset. 
+```{r echo=False}
+require(latex2exp)
+rm(list = ls())
+graphics.off()
 ```
 
+```{r echo=False}
+load('cookie.app.RData')
+load('cookie.val.RData')
+
+#Lecture des données
+
+xtrain = cookie.app[-1]
+dim(xtrain)
+```
+On a donc un dataset avec 700 variables qui représentent les fréquences auxquelles on mesure l'absorbance et 40 individus. 
+
+```{r echo=FALSE}
+head(xtrain)
+```
+
+
+```{r echo=False}
+ytrain = cookie.app[1]
+head(ytrain)
+```
+
+```{r echo=FALSE}
+xtest = cookie.val[-1]
+head(xtest)
+```
+```{r echo=FALSE}
+ytest = cookie.val[1]
+head(ytrain)
+```
+
+On va tracer les boxplots des variables explicatives pour étudier les variabilités.
+```{r echo=FALSE}
+par(mfrow=c(3,2))
+boxplot(xtrain[1:50])
+boxplot(xtrain[51:100])
+boxplot(xtrain[101:150])
+boxplot(xtrain[201:250])
+boxplot(xtrain[251:300])
+boxplot(xtrain[301:350])
+
+```
+On peut voir que les variables n'ont pas la même variabilité (les médianes sont très différentes). Pour faire une bonne études exploratoire il faudra centrer et réduire le dataset.
+Maitenant affichons les spectres pour voir(Par soucis de clarté nous allons le faire que pour 2 individus mais le code a été testé sur les 40 individus et les conclusions sont les même).
+```{r echo=FALSE}
+par(mfrow=c(1,2))
+sapply( 1:2, function(i){
+                    matplot(1:700, t(xtrain[i,]), type = 'l',
+                            main = paste("Spectre de l'individu: ", i," .")
+                            , xlab="Fréquence dans le proche infra-rouge"
+                            , ylab="Absorbance") })
+
+```
+L'allure des spectre est la même pour tous les individus. Les comportements sont assez similaires i.e on retrouve les minima et maxima locaux dans pour les même fréquences. 
+Intéressons nous maintenant à corrélations entre les différentes fréquences. Pour cela faisons un corrplot. Face au nombre élevé de variables (700) la représentation graphique est impossible pour donc faire une interprétation graphique intéressante nous allons pas faire le corrplot sur des groupes de fréquences 'éloignées'. En effet, l'allure des spectre nous montre qu'on a une certaine continuité de l'absorbance par rapport à la fréquence. Ainsi pour des fréquences proches sont forcément trés corrélées par continuité. Il est donc plus intéressant de voir la corrélation entre des variables avec des gammes de fréquence 'éloignée'. Ainsi en divisant les fréquences en trois groupes et en choisissant 5 fréquences dans chaque groupe on observe:
+```{r echo=FALSE}
+library(corrplot)
+X =cbind(xtrain[,1:5],xtrain[,300:305],xtrain[,680:685])
+corrplot(cor(X),method = "circle")
+#C <- cor(xtrain)
+
+```
+On remarque bien que notre hypothèse de continuité est vérifiée car la corrélation entre les fréquences proches est proche de 1 alors que pour des fréquences plus éloignées la corrélation est plus faible.
+On effectue maintenant une ACP sur le dataset.
+```{r echo=FALSE}
+library(FactoMineR)
+res.acp <- PCA(xtrain, ncp = 700,graph=F)
+barplot(res.acp$eig[,1] / sum(res.acp$eig[,1]) * 100, las = 2)
+abline(h = 100 / 700, col = "red")
+#which(res.pca$eig[,3] > 100 - 1/7)
+```
+La PCA se fait que sur 39 variable ceci est due au fait que la matrice $X'X$ n'est pas injective, on se trouve bien dans le cadre discuté en première partie.
+La représentation des nuages de points sur les 6 axes principaux donne:
+```{r echo=FALSE}
+par(mfrow = c(1, 2))
+
+plot(res.acp, axes = c(1, 2), choix = "ind",
+     graph.type="classic")
+
+plot(res.acp, axes = c(1, 2), choix = "var",
+     graph.type="classic")
+
+plot(res.acp, axes = c(2, 3), choix = "ind",
+     graph.type="classic")
+
+plot(res.acp, axes = c(2, 3), choix = "var",
+     graph.type="classic")
+```
+
+```{r echo=FALSE}
+par(mfrow = c(2, 2))
+
+plot(res.acp, axes = c(3, 4), choix = "ind",
+     graph.type="classic")
+
+plot(res.acp, axes = c(3, 4), choix = "var",
+     graph.type="classic")
+
+plot(res.acp, axes = c(4, 5), choix = "ind",
+     graph.type="classic")
+
+plot(res.acp, axes = c(4, 5), choix = "var",
+     graph.type="classic")
+```
+
+```{r echo=FALSE}
+par(mfrow = c(1, 2))
+plot(res.acp, axes = c(5, 6), choix = "ind",
+     graph.type="classic")
+
+plot(res.acp, axes = c(5, 6), choix = "var",
+     graph.type="classic")
+```
+On retrouve bien le fait que les variables peuvent être représentées avec les deux premières dimensions uniquement.
+## Reconstruction du nuage de points 
+Nous allons 
+```{r echo=FALSE}
+#res.acp
+```
+
+## Régression pénalisée 
+Notre dataset est constitué de variables très corrélées ceci peut fausser la résolution numérique. C'est pourquoi on effectue une régression avec le modèle \textit{ridge} avec la fonction \textit{glmet}. Ceci consiste à optimiser le problème 
+```{r echo=FALSE}
+library(glmnet)
+library(MASS)
+grid= 10^seq(6,-10,length=100)
+ridge.fit <-glmnet(x = xtrain, y = unlist(ytrain),alpha=0 ,lambda=grid)
+plot(log10(grid), coef(ridge.fit)[1,], type='l', xlab='grid (échelle logarithmique)', ylab='intercept', main='Variation de l\'estimation de l\'intercept', xlim = c(-10, 6), ylim = c(-10, 40))
+```
+L'estimateur de l'intercept n'est pas pénalisé et dépend grandement de la valeur des autres paramètres estimés qui eux sont étroitement liés à la valeur du paramètre de pénalisation. Quand le  paramètre de pénalisation tend vers zéro on voit bien qu'on converge vers la limite en zéro du modèle. On trouve bien le comportement prédit par la théorie. 
+```{r echo=FALSE}
+xtrain = as.matrix(xtrain)
+ytrain = as.matrix(ytrain)
+X.mean = apply(xtrain, 2,mean)
+mean(ytrain) - X.mean %*% coef(ridge.fit)[-1,1]
+coef(ridge.fit)[1,1]
+```
+**Pas compris Ayoub si tu peux expliquer.........**
+Intéressons nous maintenant aux cas où \textit{xtrain} et/ou \textit{ytrain} sont centrées:
+Dans le cas où \textit{ytrain} est centrée
+```{r echo=FALSE}
+y.centered = ytrain - mean(ytrain)
+ridge.fit <-glmnet(x = xtrain, y = unlist(y.centered),alpha=0 ,lambda=grid)
+plot(log10(grid), coef(ridge.fit)[1,], type='l', xlab='grid (échelle logarithmique)', ylab='intercept', main='Variation de l\'estimation de l\'intercept avec y variable centrée', xlim = c(-10, 6), ylim = c(-30, 30))
+
+```
+Lorsque l'on centre \textit{ytrain} on translate simplement la courbe obtenue avec le x choisi (\textit{xtrain} ou xtrain centré) vers le bas de la moyenne empirique de \textit{ytrain}.
+```{r echo=FALSE}
+x.centered = scale(xtrain) 
+ridge.fit <-glmnet(x = x.centered, y = unlist(ytrain),alpha=0 ,lambda=grid)
+plot(log10(grid), coef(ridge.fit)[1,], type='l', xlab='grid (échelle logarithmique)', ylab='intercept', main='Variation de l\'estimation de l\'intercept avec xtrain variable centrée', xlim = c(-10, 6), ylim = c(0, 30))
+```
+Dans le cas ou \textit{xtrain} est centrée. On a l'intercept qui est égal à la moyenne empirique de \texit{ytrain}  ce qui est normal.
+
+Dans le cas où les deux sont centrées on a:
+```{r echo=FALSE}
+ridge.fit <-glmnet(x = x.centered, y = unlist(y.centered),alpha=0 ,lambda=grid)
+plot(log10(grid), coef(ridge.fit)[1,], type='l', xlab='grid (échelle logarithmique)', ylab='intercept', main='Variation de l\'estimation de l\'intercept avec xtrain variable centrée', xlim = c(-10, 6), ylim = c(0, 10))
+```
+On retrouve bien un intercept nul comme attendu.
+Dans le cas où les variables sont centrées réduites on a:
+```{r echo=FALSE}
+
+```
 
