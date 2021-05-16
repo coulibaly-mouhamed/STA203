@@ -95,7 +95,6 @@ La PCA se fait que sur 39 variable ceci est due au fait que la matrice $X'X$ n'e
 La représentation des nuages de points sur les 6 axes principaux donne:
 ```{r echo=FALSE}
 par(mfrow = c(1, 2))
-
 plot(res.acp, axes = c(1, 2), choix = "ind",
      graph.type="classic")
 
@@ -137,9 +136,56 @@ On retrouve bien le fait que les variables peuvent être représentées avec les
 ## Reconstruction du nuage de points 
 Nous allons 
 ```{r echo=FALSE}
-#res.acp
+reconstruct <- function(res, nr, Xm, Xsd){
+  Fs <- as.matrix(res$ind$coord[,1:nr])
+  us <- as.matrix(res$svd$V[,1:nr])
+  rep <- Fs[,1]%*%t(us[,1])
+  if(nr > 1){
+    for( i in 2:nr){
+      rep <- rep + Fs[,i]%*%t(us[,i])
+    }
+  }
+  rep<- t(apply(rep, 1, function(x){x*Xsd+Xm}))
+  return(rep)
+}
 ```
+On vérifie que la fonction avec xtrain:
+```{r echo=FALSE}
+Xm <- apply(xtrain, 2, mean)
+Xsd <- apply(xtrain, 2, function(x){sqrt((var(x)*(length(x)-1))/length(x))})
 
+reconst_tot <- reconstruct(res.acp, 39, Xm, Xsd)
+
+RMSE <- sum((reconst_tot - xtrain)^2)/28000
+MAE <- sum(abs(reconstruct(res.acp, 39, Xm, Xsd) - xtrain))/28000
+
+
+plot(1:700,reconstruct(res.acp, 39, Xm, Xsd)[1,], type = 'l',
+     main = paste("Reconstruction complète; RMSE =", RMSE, "MAE =", MAE,"."),
+     xlab = "Fréquence (pas en HZ)",
+     ylab = "Amplitude")
+for(i in 2:40){
+  lines(1:700, reconstruct(res.acp, 39, Xm, Xsd)[i,], type = 'l')
+}
+```
+On a bien les même spectres ( les erreurs quadratiques moyennes et en valeur absolue sont raisonnables ) la reconstruction est donc bonne.
+On fait la reconstruction pour un nombre d'axes donné:
+```{r echo=FALSE}
+par(mfrow = c(3, 2))
+nr = c(1, 2, 3, 4, 5, 39)
+for(i in nr){
+  X <- reconstruct(res.acp, i, Xm, Xsd)
+  RMSE <- round(sqrt(sum((X - xtrain)^2)/28000), 5)
+  MAE <- round(sum(abs(X - xtrain))/28000, 5)
+  plot(1:700,X[1,], type = 'l',
+       main = paste("Reconstruction pour nr =", i, "; RMSE =", RMSE, "MAE =", MAE,"."),
+       xlab = "Fréquence (pas en HZ)",
+       ylab = "Amplitude")
+  for(j in 2:nrow(X)){
+    lines(1:700,X[j,], type = 'l')
+  }
+}
+```
 ## Régression pénalisée 
 ### Question 3.1
 Notre dataset est constitué de variables très corrélées ceci peut fausser la résolution numérique. C'est pourquoi on effectue une régression avec le modèle \textit{ridge} avec la fonction \textit{glmet}. Ceci consiste à optimiser le problème 
@@ -216,21 +262,22 @@ Nous avons pas les même valeurs pour les différents modèles. Ce qu'on ne parv
 ### Question 3.3
 On a vu grace au graphe de l'évolution de l'intercept en fonction de $\lambda$ que l'intercept se stabilisait un peu avant $10^{-5}$. De plus on peut se limiter à $10^{1}$ comme borne sup au vu du même graphe (on ne peut pas converger aprés). 
 
-```{r}
+```{r echo=FALSE}
+require(pls)
 grid = 10^seq(1,-5,length=100)
 set.seed(50)
 X = as.matrix(xtrain)
 Y = as.matrix(ytrain)
-B = 4
-folds = cvsegments(nrow(X), B, type="random")
+M = 4
+folds = cvsegments(nrow(X), M, type="random")
 
-errors = matrix(NA, B, length(grid))
+errors = matrix(NA, M, length(grid))
 
-for (b in 1:B)
+for (b in 1:M)
 {
   subsetb = unlist(folds[[b]])
   ridge.res = glmnet(X[-subsetb,], Y[-subsetb,], alpha=0, lambda=grid)
-  # trouver le modèle avec la plus faible MSE
+  # On cherhce le modèle avec la plus faible MSE
   for (j in 1:length(grid))
   {
     coef = coef(ridge.res)[,j]
@@ -238,6 +285,104 @@ for (b in 1:B)
     errors[b, j] = mean( (Y[subsetb,] - pred)^2 )
   }
 }
+#On cherche le lambda optimal
+lambd.opt = grid[which.min(apply(errors, 2, mean))]
+
+```
+Affichons les résultats 
+```{r echo=FALSE}
+q=qnorm(0.85) #quantille pour le calcul de l'erreur 
+
+plot(log(grid), apply(errors, 2, mean),type = 'l', col='red', lwd=3, xlab='Log(lambda)', ylab='Erreur moyenne ', ylim = c(2,12))
+segments(x0=log(grid), y0=apply(errors, 2, function(err) mean(err) - q * sd(err) / sqrt(M)),
+         x1=log(grid), y1=apply(errors, 2, function(err) mean(err) + q * sd(err) / sqrt(M)),
+         col='blue')
+```
+Confrontons ce résultats avec ceux obtenus avec la fonction \textit{cv.glmnet}. On a:
+
+```{r}
+foldid <- rep(0, 40)
+foldid[unlist(folds[[1]])]=1
+foldid[unlist(folds[[2]])]=2
+foldid[unlist(folds[[3]])]=3
+foldid[unlist(folds[[4]])]=4
+
+out.cv.ridge = cv.glmnet(X, Y, alpha=0, lambda=grid, type.measure='mse', nfolds=M, foldid = foldid)
+plot(out.cv.ridge)
+```
+On obtient globalement le même comportement  (à un facteur prés) ce qui est rassurant. La différence sur les intervalles de confiance est due à l'estimateur choisi pour la variance  et aussi au choix du niveau des intervalles.
+On choisi le $\lambda_{optimal}$ qui  minimise la MSE. Effectuons nos calculs avec ce $\lambda_{optimal}$ on obtient:
+```{r}
+lm.ridge = glmnet(X, Y, alpha=0, lambda=lambd.opt)
+preds = predict(lm.ridge, newx=as.matrix(xtest))
+err.gen <- mean( (preds - ytest)^2  )
+
+paste('Erreur de généralisation MSE:', round(err.gen, 4))
+paste('Erreur de généralisation relative (maximal):', round(err.gen/min(ytest), 4))
+```
+Nous avons un problème avec les erreurs on ne sait pas pourquoi...
+# Regression logistique pénalisée
+## Q2
+```{r}
+otrain = ytrain > 18
+otest = ytest > 18
+```
+Regardons la distribution:
+```{r}
+table(otrain)
+table(otest)
+```
+```{r}
+grid = 10^seq(6,-10,length=100)
+cv.out_ridge = cv.glmnet(X, otrain, alpha=0, family = binomial('logit'), nfolds=M, lambda=grid, foldid = foldid)
+cv.out_lasso = cv.glmnet(X, otrain, alpha=1, family = binomial('logit'), nfolds=M, lambda=grid, foldid = foldid)
+
+theta_r <- coef(cv.out_ridge, s = "lambda.min")
+lambda_r <- cv.out_ridge$lambda.min
+
+plot(cv.out_ridge, main='Ridge')
+plot(cv.out_lasso, main='Lasso')
+```
+### Question 3
+```{r }
+ind_s <- function(x,s) ifelse(x>=s, 1,0)
+
+ROC = function(x,theta,z){
+  prediction = 1/ (1 + exp( - cbind(1, x) %*% as.matrix(theta)))
+  new_l=NULL
+  for(s in seq(0,1,0.001)){
+    res = table((ind_s(prediction,s)),z)
+    if (dim(res)[1]==1){
+      l=(list(x=0, y=0))
+    }
+    else{
+      alpha = res[2,2]/sum(res[,2])
+      beta = res[1,1]/sum(res[,1])
+      l=list(x=1-beta,y=alpha)
+    }
+    new_l$x=cbind(new_l$x,l$x)
+    new_l$y=cbind(new_l$y,l$y)
+  }
+  return (new_l)
+}
 ```
 
+```{r}
+theta.r = coef(cv.out_ridge, s = "lambda.min")
+theta.l = coef(cv.out_lasso, s = "lambda.min")
+#z = ytrain > 18
+#ztest = ytest > 18
+new_l = ROC(xtrain,theta.r,otrain)
+plot(new_l, main='ROC Ridge train data', xlab='1-beta', ylab='alpha',type='b',col='black')
+new_l = ROC(as.matrix(xtest),theta.r,otest)
+plot(new_l, main='ROC Ridge test data', xlab='1-beta', ylab='alpha',type='b',col='black')
 
+```
+
+```{r}
+new_l = ROC(xtrain,theta.l,z)
+plot(new_l, main='ROC  train data', xlab='1-beta', ylab='alpha',type='b',col='red')
+new_l = ROC(as.matrix(xtest),theta.l,otest)
+plot(new_l, main='ROC  test data', xlab='1-beta', ylab='alpha',type='b',col='red')
+```
+Le modèle retenu en lasso est quant à lui très mauvais même en apprentissage. La courbe de ROC en test est très proche d'un modèle aléatoire.
