@@ -1,5 +1,5 @@
 ---
-itle: "Projet STA203"
+title: "Projet STA203"
 output:
   html_document:
     df_print: paged
@@ -15,13 +15,13 @@ bdzvy
 
 ## Analyse Exploratoire 
 Pour nous familiariser avec le jeu de donnée on va faire une analyse exploratoire du dataset. 
-```{r echo=False}
-require(latex2exp)
+```{r echo=FALSE}
 rm(list = ls())
 graphics.off()
+require(latex2exp)
 ```
 
-```{r echo=False}
+```{r echo=FALSE}
 load('cookie.app.RData')
 load('cookie.val.RData')
 
@@ -37,7 +37,7 @@ head(xtrain)
 ```
 
 
-```{r echo=False}
+```{r echo=FALSE}
 ytrain = cookie.app[1]
 head(ytrain)
 ```
@@ -65,8 +65,8 @@ boxplot(xtrain[301:350])
 On peut voir que les variables n'ont pas la même variabilité (les médianes sont très différentes). Pour faire une bonne études exploratoire il faudra centrer et réduire le dataset.
 Maitenant affichons les spectres pour voir(Par soucis de clarté nous allons le faire que pour 2 individus mais le code a été testé sur les 40 individus et les conclusions sont les même).
 ```{r echo=FALSE}
-par(mfrow=c(1,2))
-sapply( 1:2, function(i){
+par(mfrow=c(1,3))
+sapply( 1:3, function(i){
                     matplot(1:700, t(xtrain[i,]), type = 'l',
                             main = paste("Spectre de l'individu: ", i," .")
                             , xlab="Fréquence dans le proche infra-rouge"
@@ -77,8 +77,8 @@ L'allure des spectre est la même pour tous les individus. Les comportements son
 Intéressons nous maintenant à corrélations entre les différentes fréquences. Pour cela faisons un corrplot. Face au nombre élevé de variables (700) la représentation graphique est impossible pour donc faire une interprétation graphique intéressante nous allons pas faire le corrplot sur des groupes de fréquences 'éloignées'. En effet, l'allure des spectre nous montre qu'on a une certaine continuité de l'absorbance par rapport à la fréquence. Ainsi pour des fréquences proches sont forcément trés corrélées par continuité. Il est donc plus intéressant de voir la corrélation entre des variables avec des gammes de fréquence 'éloignée'. Ainsi en divisant les fréquences en trois groupes et en choisissant 5 fréquences dans chaque groupe on observe:
 ```{r echo=FALSE}
 library(corrplot)
-X =cbind(xtrain[,1:5],xtrain[,300:305],xtrain[,680:685])
-corrplot(cor(X),method = "circle")
+M =cbind(xtrain[,1:5],xtrain[,300:305],xtrain[,680:685])
+corrplot(cor(M))
 #C <- cor(xtrain)
 
 ```
@@ -86,7 +86,7 @@ On remarque bien que notre hypothèse de continuité est vérifiée car la corr�
 On effectue maintenant une ACP sur le dataset.
 ```{r echo=FALSE}
 library(FactoMineR)
-res.acp <- PCA(xtrain, ncp = 700,graph=F)
+res.acp = PCA(xtrain, ncp = 700,graph=F)
 barplot(res.acp$eig[,1] / sum(res.acp$eig[,1]) * 100, las = 2)
 abline(h = 100 / 700, col = "red")
 #which(res.pca$eig[,3] > 100 - 1/7)
@@ -141,6 +141,7 @@ Nous allons
 ```
 
 ## Régression pénalisée 
+### Question 3.1
 Notre dataset est constitué de variables très corrélées ceci peut fausser la résolution numérique. C'est pourquoi on effectue une régression avec le modèle \textit{ridge} avec la fonction \textit{glmet}. Ceci consiste à optimiser le problème 
 ```{r echo=FALSE}
 library(glmnet)
@@ -162,7 +163,7 @@ Intéressons nous maintenant aux cas où \textit{xtrain} et/ou \textit{ytrain} s
 Dans le cas où \textit{ytrain} est centrée
 ```{r echo=FALSE}
 y.centered = ytrain - mean(ytrain)
-ridge.fit <-glmnet(x = xtrain, y = unlist(y.centered),alpha=0 ,lambda=grid)
+ridge.fit =glmnet(x = xtrain, y = unlist(y.centered),alpha=0 ,lambda=grid)
 plot(log10(grid), coef(ridge.fit)[1,], type='l', xlab='grid (échelle logarithmique)', ylab='intercept', main='Variation de l\'estimation de l\'intercept avec y variable centrée', xlim = c(-10, 6), ylim = c(-30, 30))
 
 ```
@@ -182,6 +183,61 @@ plot(log10(grid), coef(ridge.fit)[1,], type='l', xlab='grid (échelle logarithmi
 On retrouve bien un intercept nul comme attendu.
 Dans le cas où les variables sont centrées réduites on a:
 ```{r echo=FALSE}
+x.stdcentered = scale(xtrain,scale = TRUE)
+y.stdcentered = scale(ytrain,scale = TRUE )
+ridge.fit =glmnet(x = x.stdcentered, y = unlist(y.stdcentered),alpha=0 ,lambda=grid)
+sigma = sqrt(eigen(t(x.stdcentered)%*%x.stdcentered)$values[1:39])
+v = eigen(t(x.stdcentered)%*%x.stdcentered)$vectors[,1:39]
+u = eigen(x.stdcentered%*%t(x.stdcentered))$vectors[,1:39]
 
+theta <- 0
+for(i in 1:39){
+  theta = theta + (v[,i]%*%t(u[,i]))/sigma[i]
+}
+
+theta = theta %*%y.stdcentered
+theta0 =mean(ytrain) - X.mean %*% theta
+dim(theta)
+theta0
 ```
+
+### Question 3.2
+
+```{r echo=FALSE}
+out.ridge = lm.ridge( sucres ~ ., data=cookie.app, lambda=grid )
+theta_lm_ridge = as.matrix(coef(out.ridge)[100,])
+
+theta_glmnet = as.matrix(coef(ridge.fit)[,100])
+theta_theo = as.matrix(c(theta0, theta))
+
+paste('Les normes des theta estimés quand lambda tend vers 0:','Modèle de Ridge avec lm:', norm(theta_lm_ridge), ' , ','Modèle de Ridge avec glmnet:', norm(theta_glmnet), ' , ','Valeur théorique:', norm(theta_theo))
+```
+Nous avons pas les même valeurs pour les différents modèles. Ce qu'on ne parvient pas à expliquer 
+### Question 3.3
+On a vu grace au graphe de l'évolution de l'intercept en fonction de $\lambda$ que l'intercept se stabilisait un peu avant $10^{-5}$. De plus on peut se limiter à $10^{1}$ comme borne sup au vu du même graphe (on ne peut pas converger aprés). 
+
+```{r}
+grid = 10^seq(1,-5,length=100)
+set.seed(50)
+X = as.matrix(xtrain)
+Y = as.matrix(ytrain)
+B = 4
+folds = cvsegments(nrow(X), B, type="random")
+
+errors = matrix(NA, B, length(grid))
+
+for (b in 1:B)
+{
+  subsetb = unlist(folds[[b]])
+  ridge.res = glmnet(X[-subsetb,], Y[-subsetb,], alpha=0, lambda=grid)
+  # trouver le modèle avec la plus faible MSE
+  for (j in 1:length(grid))
+  {
+    coef = coef(ridge.res)[,j]
+    pred = cbind(1,X[subsetb,])%*%coef
+    errors[b, j] = mean( (Y[subsetb,] - pred)^2 )
+  }
+}
+```
+
 
